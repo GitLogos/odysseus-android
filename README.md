@@ -86,3 +86,17 @@ upstream, pin to a ref containing them or apply them as a local patch.
   verify `android:usesCleartextTraffic="true"` in the generated manifest.
 - Cookies work in the WebView with `credentials: 'include'` (the boot patch
   forces this on rewritten requests); API-token auth works unchanged.
+
+## CI (GitHub Actions — all manually triggerable)
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `upstream-sync` | manual (`upstream_ref` input), push to `scripts/`/`overlay/`/`upstream.ref`, weekly | strict sync check, uploads staged `www/` |
+| `android-debug` | manual (`upstream_ref` input), weekly | strict sync + `cap sync` + `assembleDebug`, uploads APK |
+| `android-release` | manual only (`upstream_ref`, `version_name` inputs) | strict sync + `bundleRelease`/`assembleRelease`, uploads AAB+APK |
+
+Run manually: repo page -> Actions -> pick workflow -> Run workflow.
+Release signing needs repo secrets `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`;
+without them the release workflow still succeeds but uploads unsigned
+artifacts (testing only, not for the Play Store).
