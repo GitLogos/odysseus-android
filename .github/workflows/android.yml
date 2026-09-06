@@ -1,0 +1,56 @@
+name: android
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'Upstream odysseus ref (branch, tag, or commit SHA)'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 6 * * 1' # weekly Monday 06:00 UTC against upstream.ref
+
+jobs:
+  build-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Sync web UI from upstream
+        env:
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+        run: |
+          if [ -z "${UPSTREAM_REF}" ]; then unset UPSTREAM_REF; fi
+          npm run sync:upstream
+          cat www/.upstream.json
+
+      - name: Capacitor sync
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: odysseus-debug-${{ github.run_number }}
+          path: android/app/build/outputs/apk/debug/*.apk

@@ -1,0 +1,6 @@
+node_modules/
+android/
+www/
+.tmp-upstream/
+*.log
+.DS_Store
