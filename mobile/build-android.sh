@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# mobile/build-android.sh — sync upstream web UI, then build a debug APK.
+# mobile/build-android.sh — build a debug APK of the launcher shell.
+# The app UI loads from the user's server at runtime; nothing upstream to sync.
 # Usage:
-#   ./mobile/build-android.sh                 # sync + assembleDebug
-#   ./mobile/build-android.sh --sync-only     # just rebuild www/
-#   ./mobile/build-android.sh --open          # also `cap open android`
-# Env: UPSTREAM_REPO / UPSTREAM_REF / UPSTREAM_LOCAL / STRICT (see sync script).
+#   ./mobile/build-android.sh            # cap sync + assembleDebug
+#   ./mobile/build-android.sh --open     # also `cap open android`
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -13,19 +12,15 @@ if ! command -v npm >/dev/null 2>&1; then
   echo "npm not found. Install Node 20+ first." >&2
   exit 1
 fi
+echo "==> check launcher"
+npm run check:launcher
 if [ ! -d node_modules ]; then
   echo "==> npm install"
   npm install
 fi
-echo "==> sync web UI from upstream (ref: ${UPSTREAM_REF:-$(cat upstream.ref)})"
-npm run sync:upstream
 if [ ! -d android ]; then
   echo "==> npx cap add android (first time)"
   npx cap add android
-fi
-if [[ "${1:-}" == "--sync-only" ]]; then
-  echo "Sync done. www/ is staged; run 'npx cap sync android' when ready."
-  exit 0
 fi
 echo "==> cap sync android"
 npx cap sync android

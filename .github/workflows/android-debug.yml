@@ -1,21 +1,23 @@
 name: android-debug
 
-# Builds a debuggable APK from the upstream-synced web bundle.
-# Manual trigger: Actions -> android-debug -> Run workflow (optional ref).
-# Also runs weekly so breakage is caught without manual action.
+# Builds a debuggable APK of the launcher shell (no upstream dependency —
+# the app loads its UI from the user's server at runtime).
+# Manual trigger: Actions -> android-debug -> Run workflow.
+# Also runs weekly so toolchain breakage is caught without manual action.
 
 on:
   workflow_dispatch:
-    inputs:
-      upstream_ref:
-        description: 'Upstream odysseus ref (branch, tag, or commit SHA). Empty = upstream.ref file.'
-        required: false
-        default: ''
+  push:
+    paths:
+      - 'launcher/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - '.github/workflows/android-debug.yml'
   schedule:
     - cron: '0 6 * * 2'
 
 concurrency:
-  group: android-debug-${{ inputs.upstream_ref || 'pinned' }}
+  group: android-debug
   cancel-in-progress: true
 
 jobs:
@@ -29,6 +31,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Check launcher
+        run: npm run check:launcher
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,19 +43,6 @@ jobs:
 
       - name: Install JS deps
         run: npm install --no-audit --no-fund
-
-      - name: Sync from upstream (strict)
-        env:
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
-          STRICT: 1
-        run: |
-          if [ -z "${UPSTREAM_REF}" ]; then unset UPSTREAM_REF; fi
-          npm run sync:upstream
-          cat www/.upstream.json
-
-      - name: Record upstream SHA
-        id: stamp
-        run: echo "sha=$(node -p "require('./www/.upstream.json').sha.slice(0,12)")" >> "$GITHUB_OUTPUT"
 
       - name: Capacitor sync
         run: |
@@ -65,6 +57,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: odysseus-debug-${{ steps.stamp.outputs.sha }}-${{ github.run_number }}
+          name: odysseus-debug-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14

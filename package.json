@@ -1,20 +1,17 @@
 {
   "name": "odysseus-android",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Odysseus Android app (Capacitor). Web UI is pulled from the upstream odysseus repo at build time — see scripts/sync-upstream.mjs.",
+  "description": "Odysseus Android app (Capacitor). Thin native shell: local server picker navigates to the remote upstream UI (same-origin, no backend changes needed).",
   "scripts": {
-    "sync:upstream": "node scripts/sync-upstream.mjs",
-    "mobile:sync": "npm run sync:upstream && cap sync android",
+    "check:launcher": "node --check launcher/launcher.js",
+    "mobile:sync": "cap sync android",
     "mobile:android": "npm run mobile:sync && cap open android",
     "mobile:build-debug": "npm run mobile:sync && cap build android --no-open"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.0",
-    "@capacitor/haptics": "^6.0.0",
     "@capacitor/keyboard": "^6.0.0",
-    "@capacitor/preferences": "^6.0.0",
-    "@capacitor/share": "^6.0.0",
     "@capacitor/splash-screen": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0"
   },

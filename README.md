@@ -1,102 +1,82 @@
-# odysseus-android — Odysseus Android app (Capacitor, split-repo build)
+# odysseus-android — Odysseus Android app (Capacitor, thin shell)
 
-The Android project lives here. The web UI lives upstream in
-[odysseus-dev/odysseus](https://github.com/odysseus-dev/odysseus) and is pulled
-at build time — this repo never forks or vendors it.
+A tiny native wrapper around the self-hosted Odysseus web UI. The APK bundles
+only a **server picker** (`launcher/`); on launch the WebView navigates
+top-level to the user's server, so the full app loads straight from there —
+always the exact version matching the backend.
 
 ```
-odysseus-android/                  # THIS repo (native shell + tooling)
-├── capacitor.config.ts            # webDir: www/ (staged, gitignored)
-├── upstream.ref                   # pinned upstream ref (branch/tag/SHA)
-├── overlay/static/js/             # Capacitor shims this repo owns
-│   ├── capacitor-boot.js          # native detect, /api/* rewrite, cache, SW off
-│   ├── capacitor-server.js        # server-URL store + connection probe
-│   ├── capacitor-native.js        # StatusBar/Splash/Keyboard/Haptics/Share
-│   └── capacitor-onboarding.js    # "connect to your server" sheet
-├── scripts/sync-upstream.mjs      # fetch upstream -> stage www/ -> patch
-├── mobile/build-android.sh        # sync + cap sync + gradle assembleDebug
-└── www/                           # GENERATED (gitignored): staged app bundle
-    ├── index.html                 # <- upstream static/index.html (patched)
-    ├── login.html / login/        # <- upstream static/login.html (patched)
-    ├── static/**                  # <- upstream static/** + overlay JS
-    └── .upstream.json             # provenance stamp {repo, ref, sha, date}
+odysseus-android/
+├── capacitor.config.ts   # webDir: launcher, declarative Splash/StatusBar/Keyboard
+├── launcher/             # the ONLY bundled UI: server picker + auto-reconnect
+│   ├── index.html
+│   └── launcher.js       # zero dependencies, CORS-aware reachability probe
+├── mobile/build-android.sh
+└── .github/workflows/    # android-debug (manual+weekly), release (manual)
 ```
 
-## How the caching works
+## Why this shape (the middle ground)
 
-`www/` mirrors the server's URL space (`index.html` at root, assets under
-`static/`), because upstream uses absolute `/static/...` URLs and Capacitor
-serves `webDir` as the document root. The whole bundle ships inside the APK,
-so the app shell, all JS modules, CSS, fonts, and vendored libs load from
-disk (~0ms). Only `/api/*` hits the network, rewritten to the user-chosen
-server by `capacitor-boot.js`. Hot startup endpoints (`/api/auth/settings`,
-`/api/tools`) are additionally snapshotted to `localStorage` for instant
-cold-start paint while the network revalidates. The service worker is disabled
-in native — the bundle IS the cache.
+- **No version skew, ever.** HTML comes fresh from the server each launch, so
+  upstream UI changes can never break the app. Nothing is forked or vendored.
+- **No CORS.** Page and API share one origin (the server's), so no preflights,
+  no allow-lists.
+- **No CSP friction.** The server's own policy and nonces apply to its own
+  HTML unchanged.
+- **No backend changes required.** Stock `odysseus-dev/odysseus` works as-is —
+  no CORS/CSP patches, no minimum server version.
+- **Fast repeat loads.** Heavy, rarely-changing assets (JS modules, `lib/*`,
+  fonts, CSS) are cached on-device by upstream's own `sw.js`, which versions
+  its cache keys itself (`CACHE_NAME` / `?v=` params). First load after a
+  server update fetches what changed; everything after is local.
+
+One requirement lives on the **launcher → server hop**: the reachability probe
+runs cross-origin from the launcher, so it first tries a readable CORS fetch
+of `/api/auth/status` (shows the signed-in user when headers allow), then
+falls back to an opaque `no-cors` probe (reachability without needing any
+server headers). Either success means "safe to connect" — auth itself happens
+on the server page, same-origin.
+
+## Caching note: HTTPS vs LAN HTTP
+
+Service Workers only install on secure contexts. Over `https://` you get the
+full SW asset cache; over plain `http://` LAN IPs the app works identically
+but caching falls back to the browser HTTP cache (upstream marks JS/CSS/HTML
+`no-cache`, so they revalidate each load — cheap `304`s, still a round-trip).
+For the best mobile experience, serve remotely over HTTPS (reverse proxy,
+Tailscale, …).
 
 ## Quick start
 
 ```bash
 npm install
-npm run sync:upstream        # pull upstream @ upstream.ref, stage www/
-npx cap add android          # first time only
-npx cap sync android
-npx cap open android         # Android Studio -> Run
-# or: ./mobile/build-android.sh [--sync-only|--open]
+npm run mobile:android   # cap sync + Android Studio; Run on device/emulator
+# or: ./mobile/build-android.sh [--open]
 ```
 
-First launch: onboarding asks for the server URL
-(e.g. `http://192.168.1.20:7000` on LAN, `https://ai.example.com` remote),
-probes `GET <url>/api/auth/status`, saves, reloads. Switch later via
-`window.__odysseusShowServerSetup()` (wire to a Settings row).
-
-## Pinning the upstream version
-
-```bash
-echo "v1.2.3" > upstream.ref        # a release tag (recommended for store builds)
-echo "a1b2c3d..." > upstream.ref   # exact commit (most reproducible)
-echo "dev" > upstream.ref           # bleeding edge (default)
-node scripts/sync-upstream.mjs --ref main   # one-off override (flag > env > file)
-UPSTREAM_LOCAL=/path/to/odysseus npm run sync:upstream  # dev loop, no network
-```
-
-Every sync records the resolved commit in `www/.upstream.json`, so any APK is
-traceable to an exact upstream SHA. CI builds weekly + on demand
-(`.github/workflows/android.yml`, `upstream_ref` input).
-
-## Upstream requirement: server support (2 one-liners)
-
-No upstream **web-file** changes are needed — overlay patching happens on the
-staged copies. But the **server** must allow the Capacitor WebView origin, or
-remote `/api/*` calls are CSP/CORS-blocked. Required upstream (one line each):
-
-1. `core/middleware.py` — `connect-src` must include the app schemes:
-   `"connect-src 'self' capacitor: ionic: http://localhost https://localhost http: https:; "`
-2. `app.py` — default `ALLOWED_ORIGINS` must include
-   `capacitor://localhost,ionic://localhost,https://localhost`
-   (or set the `ALLOWED_ORIGINS` env on the server — no code change needed).
-
-`sync-upstream.mjs` checks for both markers in the fetched tree: it warns by
-default and fails with `--strict` / `STRICT=1` (CI-friendly). Until those merge
-upstream, pin to a ref containing them or apply them as a local patch.
-
-## LAN / cleartext notes
-
-- `cleartext: true` in `capacitor.config.ts` permits `http://` LAN servers;
-  verify `android:usesCleartextTraffic="true"` in the generated manifest.
-- Cookies work in the WebView with `credentials: 'include'` (the boot patch
-  forces this on rewritten requests); API-token auth works unchanged.
+First launch: enter the server URL (`http://192.168.1.20:7000` on LAN,
+`https://ai.example.com` remote), `Test`, then `Save & connect`. Returning
+launches auto-reconnect with a cancel window (`Change` re-opens the picker).
+To force the picker (saved host moved): clear the app's storage, or open the
+launcher with `#setup`.
 
 ## CI (GitHub Actions — all manually triggerable)
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `upstream-sync` | manual (`upstream_ref` input), push to `scripts/`/`overlay/`/`upstream.ref`, weekly | strict sync check, uploads staged `www/` |
-| `android-debug` | manual (`upstream_ref` input), weekly | strict sync + `cap sync` + `assembleDebug`, uploads APK |
-| `android-release` | manual only (`upstream_ref`, `version_name` inputs) | strict sync + `bundleRelease`/`assembleRelease`, uploads AAB+APK |
+| `android-debug` | manual, push on `launcher/`+config, weekly | launcher check + `cap sync` + `assembleDebug`, uploads APK |
+| `android-release` | manual only (`version_name` input) | `bundleRelease`/`assembleRelease`, uploads AAB+APK |
 
-Run manually: repo page -> Actions -> pick workflow -> Run workflow.
 Release signing needs repo secrets `ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`;
-without them the release workflow still succeeds but uploads unsigned
-artifacts (testing only, not for the Play Store).
+without them the workflow still succeeds but uploads unsigned artifacts
+(testing only, not for the Play Store).
+
+## LAN / cleartext notes
+
+- `cleartext: true` permits `http://` LAN servers; verify
+  `android:usesCleartextTraffic="true"` in the generated manifest.
+- Cookies and login work unchanged (same-origin, no third-party context).
+- Deliberately no JS bridge into the remote page: after navigation the local
+  context is gone, so all native behavior (splash, status bar, keyboard
+  resize) is config-declared in `capacitor.config.ts`.

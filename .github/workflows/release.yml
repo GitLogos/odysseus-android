@@ -1,11 +1,11 @@
 name: android-release
-# (re-registered 2026-09-06 to refresh Actions metadata)
 
-# Builds signed-or-unsigned release artifacts (AAB + APK) for store uploads.
+# Builds signed-or-unsigned release artifacts (AAB + APK) of the launcher
+# shell for store uploads. The app UI loads from the user's server at runtime,
+# so releases are decoupled from upstream versions.
 # Manual trigger ONLY: Actions -> android-release -> Run workflow.
 #
 # Inputs:
-#   upstream_ref -- upstream odysseus ref (empty = upstream.ref file).
 #   version_name -- e.g. 1.2.3 (empty = keep generated default).
 #
 # Signing: configure these repo secrets to get signed artifacts --
@@ -17,10 +17,6 @@ name: android-release
 on:
   workflow_dispatch:
     inputs:
-      upstream_ref:
-        description: 'Upstream odysseus ref (branch, tag, or commit SHA). Empty = upstream.ref file.'
-        required: false
-        default: ''
       version_name:
         description: 'Release versionName (e.g. 1.2.3). Empty = keep default.'
         required: false
@@ -37,6 +33,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Check launcher
+        run: npm run check:launcher
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,19 +45,6 @@ jobs:
 
       - name: Install JS deps
         run: npm install --no-audit --no-fund
-
-      - name: Sync from upstream (strict)
-        env:
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
-          STRICT: 1
-        run: |
-          if [ -z "${UPSTREAM_REF}" ]; then unset UPSTREAM_REF; fi
-          npm run sync:upstream
-          cat www/.upstream.json
-
-      - name: Record upstream SHA
-        id: stamp
-        run: echo "sha=$(node -p "require('./www/.upstream.json').sha.slice(0,12)")" >> "$GITHUB_OUTPUT"
 
       - name: Capacitor sync
         run: |
@@ -77,9 +63,9 @@ jobs:
           ./gradlew bundleRelease assembleRelease
 
       # NOTE: `secrets.*` must not appear in step `if:` expressions in this
-      # repo's workflows (GitHub rejects the dispatch/push event at parse
-      # time with "Unrecognized named-value: 'secrets'"). Resolve once via
-      # env + shell, then gate on the step output instead.
+      # repo's workflows (GitHub rejects the event at parse time with
+      # "Unrecognized named-value: 'secrets'"). Resolve once via env + shell,
+      # then gate on the step output instead.
       - name: Check signing secrets
         id: signing
         env:
@@ -113,7 +99,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: odysseus-release-${{ steps.stamp.outputs.sha }}-${{ github.run_number }}
+          name: odysseus-release-${{ github.run_number }}
           path: |
             android/app/build/outputs/bundle/release/*.aab
             android/app/build/outputs/apk/release/*.apk
