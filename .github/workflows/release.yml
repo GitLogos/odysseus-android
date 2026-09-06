@@ -87,29 +87,24 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_B64" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Sign release artifacts
+      - name: Sign release artifacts (AAB via jarsigner, APK via apksigner)
         if: steps.signing.outputs.enabled == 'true'
-        uses: r0adkirby/sign-android-release@v1
-        with:
-          releaseDirectory: android/app/build/outputs/bundle/release
-          signingKeyBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
         env:
-          BUILD_TOOLS_VERSION: '34.0.0'
-
-      - name: Sign release APK
-        if: steps.signing.outputs.enabled == 'true'
-        uses: r0adkirby/sign-android-release@v1
-        with:
-          releaseDirectory: android/app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: '34.0.0'
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > /tmp/odysseus-release.jks
+          AAB=(android/app/build/outputs/bundle/release/*.aab)
+          APK=(android/app/build/outputs/apk/release/*.apk)
+          jarsigner -keystore /tmp/odysseus-release.jks -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" "${AAB[0]}" "$KEY_ALIAS"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
+          "$APKSIGNER" sign --ks /tmp/odysseus-release.jks \
+            --ks-pass:env KEYSTORE_PASSWORD --key-pass:env KEY_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" --out "${APK[0]%.apk}-signed.apk" "${APK[0]}"
+          rm -f /tmp/odysseus-release.jks
 
       - name: Note unsigned artifacts
         if: steps.signing.outputs.enabled != 'true'
