@@ -76,8 +76,19 @@ jobs:
           cd android
           ./gradlew bundleRelease assembleRelease
 
+      # NOTE: `secrets.*` must not appear in step `if:` expressions in this
+      # repo's workflows (GitHub rejects the dispatch/push event at parse
+      # time with "Unrecognized named-value: 'secrets'"). Resolve once via
+      # env + shell, then gate on the step output instead.
+      - name: Check signing secrets
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+
       - name: Sign release artifacts
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        if: steps.signing.outputs.enabled == 'true'
         uses: r0adkirby/sign-android-release@v1
         with:
           releaseDirectory: android/app/build/outputs/bundle/release
@@ -89,7 +100,7 @@ jobs:
           BUILD_TOOLS_VERSION: '34.0.0'
 
       - name: Sign release APK
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        if: steps.signing.outputs.enabled == 'true'
         uses: r0adkirby/sign-android-release@v1
         with:
           releaseDirectory: android/app/build/outputs/apk/release
@@ -101,7 +112,7 @@ jobs:
           BUILD_TOOLS_VERSION: '34.0.0'
 
       - name: Note unsigned artifacts
-        if: secrets.ANDROID_KEYSTORE_BASE64 == ''
+        if: steps.signing.outputs.enabled != 'true'
         run: echo "::warning::No signing secrets configured -- uploading UNSIGNED artifacts (not for store upload)."
 
       - name: Upload release artifacts
