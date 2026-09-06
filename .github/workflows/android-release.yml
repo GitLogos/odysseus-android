@@ -5,10 +5,10 @@ name: android-release
 # Manual trigger ONLY: Actions -> android-release -> Run workflow.
 #
 # Inputs:
-#   upstream_ref — upstream odysseus ref (empty = upstream.ref file).
-#   version_name — e.g. 1.2.3 (empty = keep generated default).
+#   upstream_ref -- upstream odysseus ref (empty = upstream.ref file).
+#   version_name -- e.g. 1.2.3 (empty = keep generated default).
 #
-# Signing: configure these repo secrets to get signed artifacts —
+# Signing: configure these repo secrets to get signed artifacts --
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
 #   ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
 # Without them the workflow still succeeds but uploads UNSIGNED artifacts
@@ -101,7 +101,7 @@ jobs:
 
       - name: Note unsigned artifacts
         if: secrets.ANDROID_KEYSTORE_BASE64 == ''
-        run: echo "::warning::No signing secrets configured — uploading UNSIGNED artifacts (not for store upload)."
+        run: echo "::warning::No signing secrets configured -- uploading UNSIGNED artifacts (not for store upload)."
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
