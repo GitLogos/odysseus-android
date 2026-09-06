@@ -1,4 +1,5 @@
 name: android-release
+# (re-registered 2026-09-06 to refresh Actions metadata)
 
 # Builds signed-or-unsigned release artifacts (AAB + APK) for store uploads.
 # Manual trigger ONLY: Actions -> android-release -> Run workflow.
