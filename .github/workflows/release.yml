@@ -83,16 +83,22 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > /tmp/odysseus-release.jks
+          # NOTE: apksigner password forms vary by build-tools version
+          # (`:env` is rejected on some runners), so pass passwords via files,
+          # which every version accepts. Temp filenames avoid matching secret
+          # values so GitHub log-masking doesn't mangle the output.
+          echo "$KEYSTORE_B64" | base64 -d > /tmp/app-signing.jks
+          printf '%s' "$KEYSTORE_PASSWORD" > /tmp/ks-pass.txt
+          printf '%s' "$KEY_PASSWORD" > /tmp/key-pass.txt
           AAB=(android/app/build/outputs/bundle/release/*.aab)
           APK=(android/app/build/outputs/apk/release/*.apk)
-          jarsigner -keystore /tmp/odysseus-release.jks -storepass "$KEYSTORE_PASSWORD" \
+          jarsigner -keystore /tmp/app-signing.jks -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" "${AAB[0]}" "$KEY_ALIAS"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
-          "$APKSIGNER" sign --ks /tmp/odysseus-release.jks \
-            --ks-pass:env KEYSTORE_PASSWORD --key-pass:env KEY_PASSWORD \
+          "$APKSIGNER" sign --ks /tmp/app-signing.jks \
+            --ks-pass:file /tmp/ks-pass.txt --key-pass:file /tmp/key-pass.txt \
             --ks-key-alias "$KEY_ALIAS" --out "${APK[0]%.apk}-signed.apk" "${APK[0]}"
-          rm -f /tmp/odysseus-release.jks
+          rm -f /tmp/app-signing.jks /tmp/ks-pass.txt /tmp/key-pass.txt
 
       - name: Note unsigned artifacts
         if: steps.signing.outputs.enabled != 'true'
