@@ -26,6 +26,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write # needed to create tags + GitHub Releases
     steps:
       - uses: actions/checkout@v4
 
@@ -96,11 +98,44 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         run: echo "::warning::No signing secrets configured -- uploading UNSIGNED artifacts (not for store upload)."
 
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [ -n "${{ inputs.version_name }}" ]; then TAG="v${{ inputs.version_name }}"; else TAG="build-${{ github.run_number }}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Prepare release files (stable names)
+        id: files
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          mkdir -p dist-release
+          AAB=(android/app/build/outputs/bundle/release/*.aab)
+          cp "${AAB[0]}" "dist-release/odysseus-$TAG.aab"
+          if compgen -G "android/app/build/outputs/apk/release/*-signed.apk" > /dev/null; then
+            cp android/app/build/outputs/apk/release/*-signed.apk "dist-release/odysseus-$TAG.apk"
+            SIGNED="signed"
+          else
+            cp android/app/build/outputs/apk/release/*.apk "dist-release/odysseus-$TAG.apk"
+            SIGNED="UNSIGNED (testing only — not for the Play Store)"
+          fi
+          ls -la dist-release
+          {
+            echo "body<<EOF"
+            echo "Odysseus Android launcher shell ($TAG)."
+            echo
+            echo "Artifacts: $SIGNED."
+            echo "Point the app at your server on first launch; the UI loads from there."
+            echo "Built from ${{ github.sha }} (run #${{ github.run_number }})."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: odysseus-release-${{ github.run_number }}
-          path: |
-            android/app/build/outputs/bundle/release/*.aab
-            android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Odysseus Android ${{ steps.meta.outputs.tag }}
+          body: ${{ steps.files.outputs.body }}
+          draft: false
+          prerelease: ${{ steps.signing.outputs.enabled != 'true' }}
+          files: dist-release/*

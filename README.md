@@ -64,13 +64,13 @@ launcher with `#setup`.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `android-debug` | manual, push on `launcher/`+config, weekly | launcher check + `cap sync` + `assembleDebug`, uploads APK |
-| `android-release` | manual only (`version_name` input) | `bundleRelease`/`assembleRelease`, uploads AAB+APK |
+| `android-debug` | manual, push on `launcher/`+config, weekly | launcher check + `cap sync` + `assembleDebug`, uploads APK artifact |
+| `android-release` | manual only (`version_name` input) | `bundleRelease`/`assembleRelease`, **publishes AAB+APK to GitHub Releases** (`v<version>` tag, or `build-<run>` without input) |
 
 Release signing needs repo secrets `ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`;
-without them the workflow still succeeds but uploads unsigned artifacts
-(testing only, not for the Play Store).
+without them the workflow still succeeds but publishes unsigned artifacts
+marked as prerelease (testing only, not for the Play Store).
 
 ## LAN / cleartext notes
 
