@@ -83,10 +83,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          # NOTE: apksigner password forms vary by build-tools version
-          # (`:env` is rejected on some runners), so pass passwords via files,
-          # which every version accepts. Temp filenames avoid matching secret
-          # values so GitHub log-masking doesn't mangle the output.
+          # apksigner password forms differ by build-tools version (this
+          # runner rejects both `:env` and `:file`), so probe `--help` and
+          # fall back to plaintext args, which every version accepts. Safe
+          # here: ephemeral runner, and GitHub masks secret values in logs.
+          # Temp filenames avoid matching secret values so log-masking
+          # doesn't mangle the output.
           echo "$KEYSTORE_B64" | base64 -d > /tmp/app-signing.jks
           printf '%s' "$KEYSTORE_PASSWORD" > /tmp/ks-pass.txt
           printf '%s' "$KEY_PASSWORD" > /tmp/key-pass.txt
@@ -94,10 +96,19 @@ jobs:
           APK=(android/app/build/outputs/apk/release/*.apk)
           jarsigner -keystore /tmp/app-signing.jks -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" "${AAB[0]}" "$KEY_ALIAS"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
-          "$APKSIGNER" sign --ks /tmp/app-signing.jks \
-            --ks-pass:file /tmp/ks-pass.txt --key-pass:file /tmp/key-pass.txt \
-            --ks-key-alias "$KEY_ALIAS" --out "${APK[0]%.apk}-signed.apk" "${APK[0]}"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
+          [ -x "$APKSIGNER" ] || { echo "apksigner not found under $ANDROID_HOME/build-tools"; exit 1; }
+          echo "apksigner: $APKSIGNER"
+          if "$APKSIGNER" --help 2>&1 | grep -q -- "--ks-pass:file"; then
+            "$APKSIGNER" sign --ks /tmp/app-signing.jks \
+              --ks-pass:file /tmp/ks-pass.txt --key-pass:file /tmp/key-pass.txt \
+              --ks-key-alias "$KEY_ALIAS" --out "${APK[0]%.apk}-signed.apk" "${APK[0]}"
+          else
+            "$APKSIGNER" sign --ks /tmp/app-signing.jks \
+              --ks-pass "$KEYSTORE_PASSWORD" --key-pass "$KEY_PASSWORD" \
+              --ks-key-alias "$KEY_ALIAS" --out "${APK[0]%.apk}-signed.apk" "${APK[0]}"
+          fi
+          "$APKSIGNER" verify "${APK[0]%.apk}-signed.apk" && echo "APK signature OK"
           rm -f /tmp/app-signing.jks /tmp/ks-pass.txt /tmp/key-pass.txt
 
       - name: Note unsigned artifacts
