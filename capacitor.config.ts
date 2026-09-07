@@ -29,6 +29,14 @@ const config: CapacitorConfig = {
     // No `url` by design: the destination server is chosen at runtime in
     // the launcher, not at build time.
     cleartext: true, // allow http:// LAN servers (e.g. http://192.168.1.x:7000)
+    // The launcher navigates top-level to the user-entered server URL.
+    // Capacitor opens every non-allow-listed host in the SYSTEM browser, so
+    // without this the app would kick out to Chrome on connect. The host is
+    // unknown at build time (each user self-hosts somewhere else, often a
+    // bare LAN IP:port), hence the wildcard. Scoped risk: the app is a
+    // dedicated client for the user's own server — it never links anywhere
+    // else — but note Play review can question broad navigation rights.
+    allowNavigation: ['*'],
   },
   plugins: {
     SplashScreen: {

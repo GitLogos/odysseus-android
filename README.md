@@ -7,7 +7,7 @@ always the exact version matching the backend.
 
 ```
 odysseus-android/
-├── capacitor.config.ts   # webDir: launcher, declarative Splash/StatusBar/Keyboard
+├── capacitor.config.ts   # webDir: launcher, allowNavigation '*', declarative Splash/StatusBar/Keyboard
 ├── launcher/             # the ONLY bundled UI: server picker + auto-reconnect
 │   ├── index.html
 │   └── launcher.js       # zero dependencies, CORS-aware reachability probe
