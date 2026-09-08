@@ -1,9 +1,25 @@
 # odysseus-android — Odysseus Android app (Capacitor, thin shell)
 
+<p align="center">
+  <img src="assets/icon.png" width="128" alt="Odysseus logo" />
+</p>
+
 A tiny native wrapper around the self-hosted Odysseus web UI. The APK bundles
 only a **server picker** (`launcher/`); on launch the WebView navigates
 top-level to the user's server, so the full app loads straight from there —
 always the exact version matching the backend.
+
+## Get the app
+
+[![Get it on Obtainium](https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/GitLogos/odysseus-android)
+
+Tap the badge (or [install Obtainium](https://github.com/ImranR98/Obtainium)
+and add `https://github.com/GitLogos/odysseus-android` as an app source) to
+install the APK straight from this repo's
+[Releases](https://github.com/GitLogos/odysseus-android/releases) and get
+automatic updates. Tip: enable *Include prereleases* on the app entry in
+Obtainium if you also want unsigned test builds; stable signed releases
+appear as regular releases.
 
 ```
 odysseus-android/
