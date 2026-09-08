@@ -5,6 +5,7 @@
   "description": "Odysseus Android app (Capacitor). Thin native shell: local server picker navigates to the remote upstream UI (same-origin, no backend changes needed).",
   "scripts": {
     "check:launcher": "node --check launcher/launcher.js",
+    "mobile:assets": "capacitor-assets generate --icon assets/icon.png --iconBackgroundColor '#ffffff'",
     "mobile:sync": "cap sync android",
     "mobile:android": "npm run mobile:sync && cap open android",
     "mobile:build-debug": "npm run mobile:sync && cap build android --no-open"
@@ -17,6 +18,7 @@
     "@capacitor/status-bar": "^6.0.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.0",
     "@capacitor/cli": "^6.1.0",
     "typescript": "^5.4.0"
   }

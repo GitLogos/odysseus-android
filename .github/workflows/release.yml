@@ -53,6 +53,10 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Generate launcher icons (if assets/icon.png present)
+        run: |
+          if [ -f assets/icon.png ]; then npm run mobile:assets; else echo "No assets/icon.png — keeping default icons."; fi
+
       - name: Apply versionName override
         if: inputs.version_name != ''
         run: |
