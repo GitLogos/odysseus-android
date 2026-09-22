@@ -43,6 +43,10 @@ jobs:
           java-version: 17
 
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default includes the retired package named `tools`,
+          # which sdkmanager 16 can no longer resolve.
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Install JS deps
         run: npm install --no-audit --no-fund
