@@ -1,4 +1,5 @@
 node_modules/
-android/
+/android/
+/native/odysseus-shell/android/build/
 *.log
 .DS_Store

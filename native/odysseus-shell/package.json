@@ -1,0 +1,20 @@
+{
+  "name": "@odysseus/capacitor-shell",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "android/",
+    "dist/"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^6.0.0"
+  }
+}

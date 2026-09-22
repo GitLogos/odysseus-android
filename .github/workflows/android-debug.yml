@@ -10,9 +10,11 @@ on:
   push:
     paths:
       - 'launcher/**'
+      - 'native/**'
       - 'assets/**'
       - 'capacitor.config.ts'
       - 'package.json'
+      - 'mobile/**'
       - '.github/workflows/android-debug.yml'
   schedule:
     - cron: '0 6 * * 2'

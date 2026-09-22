@@ -8,9 +8,10 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  html { height: 100%; }
   body {
     margin: 0; display: flex; align-items: center; justify-content: center;
+    min-height: 100%; overflow: auto;
     padding: 20px; background: #282c34; color: #e6e6e6;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
@@ -32,6 +33,7 @@
   .err { min-height: 20px; font-size: 12.5px; color: #ff9c9c; margin: 8px 0 4px; }
   .ok { min-height: 20px; font-size: 12.5px; color: #9ce8a8; margin: 8px 0 4px; }
   .row { display: flex; gap: 10px; margin-top: 10px; }
+  .row.wrap { flex-wrap: wrap; }
   button {
     flex: 1; padding: 11px; border-radius: 9px; border: 0;
     font-size: 14.5px; font-weight: 600; cursor: pointer;
@@ -40,6 +42,19 @@
   button.save { background: #e06c75; color: #fff; }
   button:disabled { opacity: .55; cursor: wait; }
   .hint { margin-top: 12px; font-size: 12px; opacity: .65; line-height: 1.5; }
+  .settings-list { display: grid; gap: 10px; text-align: left; }
+  .setting {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; padding: 11px 0; border-bottom: 1px solid #3d434f;
+  }
+  .setting:last-child { border-bottom: 0; }
+  .setting label { font-size: 14px; font-weight: 600; }
+  .setting small { display: block; opacity: .7; font-weight: 400; margin-top: 3px; line-height: 1.35; }
+  .setting input { width: 20px; height: 20px; accent-color: #e06c75; }
+  .setting button { flex: 0 0 auto; }
+  .status { min-height: 20px; margin-top: 10px; font-size: 12.5px; color: #9ce8a8; }
+  .status.error { color: #ff9c9c; }
+  .danger { background: transparent; color: #ffb0b0; border: 1px solid #75444a; }
   .hidden { display: none; }
 </style>
 </head>
@@ -65,12 +80,52 @@
   </div>
   <div id="reconnect" class="hidden">
     <p class="left" id="reconnect-text"></p>
-    <div class="row">
+    <div class="err" id="reconnect-error"></div>
+    <div class="row wrap">
       <button class="test" id="change" type="button">Change</button>
+      <button class="test" id="settings-open" type="button">Settings</button>
       <button class="save" id="go" type="button">Connect</button>
     </div>
   </div>
+  <div id="settings" class="hidden">
+    <div class="settings-list">
+      <div class="setting">
+        <label for="keep-signed-in">Keep me signed in
+          <small>When off, cookies and cache are cleared before every connection.</small>
+        </label>
+        <input id="keep-signed-in" type="checkbox" />
+      </div>
+      <div class="setting">
+        <label for="strict-chat">Strict chat
+          <small>Adds the optional strict-chat flag. Servers that do not support it ignore it.</small>
+        </label>
+        <input id="strict-chat" type="checkbox" />
+      </div>
+      <div class="setting">
+        <label for="keep-awake">Keep screen awake
+          <small>Keeps the screen on while connected. Compatible voice servers also enable this automatically.</small>
+        </label>
+        <input id="keep-awake" type="checkbox" />
+      </div>
+      <div class="setting">
+        <label>Microphone
+          <small id="mic-status">Checking permission…</small>
+        </label>
+        <button class="test" id="grant-mic" type="button">Grant</button>
+      </div>
+    </div>
+    <div class="status" id="settings-status" role="status"></div>
+    <div class="row wrap">
+      <button class="test" id="settings-change-server" type="button">Server</button>
+      <button class="danger" id="logout" type="button">Log out</button>
+      <button class="danger" id="clear-web-data" type="button">Clear web data</button>
+    </div>
+    <div class="row">
+      <button class="save" id="settings-close" type="button">Done</button>
+    </div>
+  </div>
 </div>
+<script src="logic.js"></script>
 <script src="launcher.js"></script>
 </body>
 </html>

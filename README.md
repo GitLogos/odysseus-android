@@ -24,9 +24,12 @@ appear as regular releases.
 ```
 odysseus-android/
 ├── capacitor.config.ts   # webDir: launcher, allowNavigation '*', declarative Splash/StatusBar/Keyboard
-├── launcher/             # the ONLY bundled UI: server picker + auto-reconnect
+├── launcher/             # bundled server picker, reconnect, and device settings
 │   ├── index.html
-│   └── launcher.js       # zero dependencies, CORS-aware reachability probe
+│   ├── logic.js          # URL normalization + optional strict-chat destination
+│   └── launcher.js       # CORS-aware probe, local settings, guarded native calls
+├── native/
+│   └── odysseus-shell/   # local Capacitor plugin (Android browser plumbing)
 ├── mobile/build-android.sh
 └── .github/workflows/    # android-debug (manual+weekly), release (manual)
 ```
@@ -53,6 +56,32 @@ falls back to an opaque `no-cors` probe (reachability without needing any
 server headers). Either success means "safe to connect" — auth itself happens
 on the server page, same-origin.
 
+## Device settings and branch compatibility
+
+The reconnect screen has a local **Settings** button. These controls are
+implemented by the bundled launcher and the local `OdysseusShell` Capacitor
+plugin; they never inspect or rewrite the remote page:
+
+- keep the web session, or clear cookies/cache before each connection;
+- log out now and clear WebView data while keeping the saved server;
+- grant Android microphone permission and restart once so WebView audio sees
+  the newly available input device;
+- optionally keep the screen awake while connected;
+- optionally add `strict_chat=1` to the server URL.
+
+Normal server loading and browser microphone recording work with `main`, `dev`,
+and `Improvements`. Optional integrations degrade as follows:
+
+| Integration | `main` / `dev` | `Improvements` |
+|---|---|---|
+| `strict_chat=1` | Ignored; normal UI loads | Enables strict chat when supported |
+| `window.OdysseusApp.setVoiceActive(...)` | Never called | Keeps the screen awake while voice mode is active |
+
+The remote voice hook is intentionally limited to a single boolean
+`setVoiceActive` method. Cookie, cache, permission, restart, and manual
+screen-wake plugin methods reject calls unless the WebView is displaying the
+local `https://localhost` launcher.
+
 ## Caching note: HTTPS vs LAN HTTP
 
 Service Workers only install on secure contexts. Over `https://` you get the
@@ -71,10 +100,9 @@ npm run mobile:android   # cap sync + Android Studio; Run on device/emulator
 ```
 
 First launch: enter the server URL (`http://192.168.1.20:7000` on LAN,
-`https://ai.example.com` remote), `Test`, then `Save & connect`. Returning
-launches auto-reconnect with a cancel window (`Change` re-opens the picker).
-To force the picker (saved host moved): clear the app's storage, or open the
-launcher with `#setup`.
+`https://ai.example.com` remote), `Test`, then `Save & connect`. Returning launches auto-reconnect with a cancel window: `Change` re-opens the
+picker and `Settings` opens device controls. To force the picker (saved host
+moved), clear the app's storage or open the launcher with `#setup`.
 
 ## CI (GitHub Actions — all manually triggerable)
 
@@ -93,6 +121,6 @@ marked as prerelease (testing only, not for the Play Store).
 - `cleartext: true` permits `http://` LAN servers; verify
   `android:usesCleartextTraffic="true"` in the generated manifest.
 - Cookies and login work unchanged (same-origin, no third-party context).
-- Deliberately no JS bridge into the remote page: after navigation the local
-  context is gone, so all native behavior (splash, status bar, keyboard
-  resize) is config-declared in `capacitor.config.ts`.
+- Remote pages get no general-purpose device API. The only direct bridge is
+  the optional boolean voice-active hook documented above; all privileged
+  controls remain local to the bundled launcher.

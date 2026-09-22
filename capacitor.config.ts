@@ -10,9 +10,10 @@
 //   - No version skew: HTML always loads fresh from the server; heavy assets
 //     (JS/CSS/fonts/libs) are cached on-device by upstream's own sw.js,
 //     which versions cache keys itself (CACHE_NAME / ?v= params).
-// Native plugins below are all declarative (config-only, no JS bridge):
-// after navigation to the remote origin the local JS context is gone, so
-// everything native must work without bundled script assistance.
+// The local OdysseusShell plugin handles Android-only browser plumbing
+// (microphone permission, cache/cookie clearing, and screen wake). Its only
+// remote-page bridge is a guarded boolean voice-active signal used by servers
+// that support it; all other controls live in the bundled launcher UI.
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {

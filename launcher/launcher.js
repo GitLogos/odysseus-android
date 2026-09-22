@@ -1,44 +1,76 @@
-/* launcher/launcher.js — server picker for the Odysseus Android app.
- * Plain classic script, zero dependencies. Runs on the LOCAL launcher origin
- * (capacitor https://localhost) before navigating to the user's server.
+/* launcher/launcher.js — local connection and device settings UI.
  *
- * Connectivity probing is CORS-aware on purpose: the launcher origin differs
- * from the server origin, so a readable fetch needs CORS headers — but those
- * are NOT required for the app itself (once navigated, page and API share the
- * server origin). Strategy:
- *   1. Try a normal CORS fetch of /api/auth/status -> can even show the username.
- *   2. On TypeError (blocked/unreadable), fall back to a `no-cors` probe: an
- *      opaque-but-resolved response proves reachability without needing headers.
- * Either success means "safe to connect". Auth happens on the server page.
+ * The remote Odysseus page remains untouched. Every branch gets normal
+ * top-level navigation; optional URL/native hooks are guarded so older
+ * servers behave like an ordinary WebView.
  */
 (function () {
   'use strict';
 
   var SERVER_KEY = 'odysseus-server-url';
+  var SETTINGS_KEY = 'odysseus-app-settings-v1';
   var TIMEOUT_MS = 10000;
+  var logic = window.OdysseusLauncherLogic;
+  var nativeShell;
+  var reconnectTimer;
+
+  var defaults = {
+    keepSignedIn: true,
+    strictChat: false,
+    keepAwake: false,
+  };
 
   var $ = function (id) { return document.getElementById(id); };
-  var input = $('url'), errEl = $('err'), okEl = $('ok');
-  var btnTest = $('test'), btnSave = $('save');
-  var form = $('form'), reconnect = $('reconnect');
+  var input = $('url');
+  var errEl = $('err');
+  var okEl = $('ok');
+  var btnTest = $('test');
+  var btnSave = $('save');
+  var form = $('form');
+  var reconnect = $('reconnect');
+  var settingsPanel = $('settings');
+  var settingsStatus = $('settings-status');
 
-  function normalize(url) {
-    url = String(url || '').trim().replace(/\/+$/, '');
-    if (!url) return '';
-    if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
-    return url;
-  }
-
-  function stored() {
-    try { return normalize(window.localStorage.getItem(SERVER_KEY) || ''); }
-    catch (_) { return ''; }
-  }
-
-  function persist(url) {
+  function getNativeShell() {
+    if (nativeShell !== undefined) return nativeShell;
     try {
-      if (url) window.localStorage.setItem(SERVER_KEY, url);
-      else window.localStorage.removeItem(SERVER_KEY);
-    } catch (_) {}
+      nativeShell = window.Capacitor && typeof window.Capacitor.registerPlugin === 'function'
+        ? window.Capacitor.registerPlugin('OdysseusShell')
+        : null;
+    } catch (_) {
+      nativeShell = null;
+    }
+    return nativeShell;
+  }
+
+  function loadSettings() {
+    try {
+      var parsed = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || '{}');
+      return {
+        keepSignedIn: parsed.keepSignedIn !== false,
+        strictChat: parsed.strictChat === true,
+        keepAwake: parsed.keepAwake === true,
+      };
+    } catch (_) {
+      return Object.assign({}, defaults);
+    }
+  }
+
+  function saveSettings(settings) {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  function storedServer() {
+    try {
+      return logic.normalize(window.localStorage.getItem(SERVER_KEY) || '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function persistServer(url) {
+    if (url) window.localStorage.setItem(SERVER_KEY, url);
+    else window.localStorage.removeItem(SERVER_KEY);
   }
 
   function setBusy(busy) {
@@ -46,110 +78,288 @@
     btnSave.disabled = busy;
   }
 
-  function sayErr(m) { errEl.textContent = m || ''; if (m) okEl.textContent = ''; }
-  function sayOk(m) { okEl.textContent = m || ''; if (m) errEl.textContent = ''; }
-
-  function fetchTimeout(url, opts) {
-    var ctrl = null, timer = null;
-    try {
-      ctrl = new AbortController();
-      timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, TIMEOUT_MS);
-      opts = opts || {};
-      opts.signal = ctrl.signal;
-      return window.fetch(url, opts).then(
-        function (res) { if (timer) clearTimeout(timer); return res; },
-        function (e) { if (timer) clearTimeout(timer); throw e; }
-      );
-    } catch (e) {
-      if (timer) clearTimeout(timer);
-      return Promise.reject(e);
-    }
+  function sayErr(message) {
+    errEl.textContent = message || '';
+    if (message) okEl.textContent = '';
   }
 
-  /** Resolve { state: 'cors'|'opaque', username } or reject with a message. */
+  function sayOk(message) {
+    okEl.textContent = message || '';
+    if (message) errEl.textContent = '';
+  }
+
+  function setSettingsStatus(message, error) {
+    settingsStatus.textContent = message || '';
+    settingsStatus.classList.toggle('error', !!error);
+  }
+
+  function fetchTimeout(url, opts) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS);
+    opts = opts || {};
+    opts.signal = ctrl.signal;
+    return window.fetch(url, opts).then(
+      function (res) { clearTimeout(timer); return res; },
+      function (error) { clearTimeout(timer); throw error; }
+    );
+  }
+
   function probe(base) {
-    var clean = normalize(base);
-    if (!clean) return Promise.reject(new Error('Enter your server URL first.'));
+    var clean = logic.normalize(base);
+    if (!clean) return Promise.reject(new Error('Enter a valid HTTP or HTTPS server URL.'));
     return fetchTimeout(clean + '/api/auth/status', { credentials: 'include' })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
           if (!res.ok) throw new Error('Server answered HTTP ' + res.status + '.');
-          return { state: 'cors', base: clean, username: data && (data.username || data.user) || '' };
+          return {
+            state: 'cors',
+            base: clean,
+            username: data && (data.username || data.user) || '',
+          };
         });
       })
-      .catch(function (e) {
-        if (e && e.name === 'AbortError') throw new Error('Timed out — check host, port, and HTTP/HTTPS.');
-        if (e && e.message && e.message.indexOf('HTTP ') === 0) throw e;
-        // Blocked/unreadable (very likely just missing CORS headers on an old
-        // server — irrelevant once the app itself runs on that origin).
-        // A no-cors probe distinguishes "reachable" from "unreachable".
+      .catch(function (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error('Timed out — check host, port, and HTTP/HTTPS.');
+        }
+        if (error && error.message && error.message.indexOf('HTTP ') === 0) throw error;
         return fetchTimeout(clean + '/api/auth/status', { mode: 'no-cors' }).then(
           function () { return { state: 'opaque', base: clean, username: '' }; },
-          function () { throw new Error('Unreachable. Check the URL and that the server is running.'); }
+          function () {
+            throw new Error('Unreachable. Check the URL and that the server is running.');
+          }
         );
       });
   }
 
-  function go(base) {
-    window.location.assign(base);
+  async function prepareNative(settings) {
+    var shell = getNativeShell();
+    if (!shell) {
+      if (!settings.keepSignedIn) {
+        throw new Error('Session cleanup is unavailable in this build; connection cancelled.');
+      }
+      return;
+    }
+    if (!settings.keepSignedIn) await shell.clearWebData();
+    await shell.setKeepAwake({ enabled: settings.keepAwake });
+  }
+
+  async function connect(base) {
+    var clean = logic.normalize(base);
+    if (!clean) throw new Error('The saved server URL is invalid.');
+    var settings = loadSettings();
+    await prepareNative(settings);
+    window.location.replace(logic.destination(clean, settings.strictChat));
+  }
+
+  function cancelReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  function showConnectForm(server) {
+    cancelReconnect();
+    reconnect.classList.add('hidden');
+    settingsPanel.classList.add('hidden');
+    form.classList.remove('hidden');
+    $('title').textContent = 'Connect to your server';
+    $('blurb').textContent = 'Enter the address of your Odysseus server.';
+    input.value = server || '';
+    try { input.focus(); } catch (_) {}
+  }
+
+  function syncSettingsControls() {
+    var settings = loadSettings();
+    $('keep-signed-in').checked = settings.keepSignedIn;
+    $('strict-chat').checked = settings.strictChat;
+    $('keep-awake').checked = settings.keepAwake;
+  }
+
+  function showSettings() {
+    cancelReconnect();
+    form.classList.add('hidden');
+    reconnect.classList.add('hidden');
+    settingsPanel.classList.remove('hidden');
+    $('title').textContent = 'App settings';
+    $('blurb').textContent = 'These controls are stored on this device and do not modify the server.';
+    syncSettingsControls();
+    setSettingsStatus('', false);
+    refreshMicrophoneStatus();
+  }
+
+  function showReconnect(server) {
+    form.classList.add('hidden');
+    settingsPanel.classList.add('hidden');
+    reconnect.classList.remove('hidden');
+    $('title').textContent = 'Odysseus';
+    $('blurb').textContent = '';
+    $('reconnect-text').textContent = 'Saved server: ' + server;
+    $('reconnect-error').textContent = '';
+    reconnectTimer = setTimeout(function () {
+      connect(server).catch(function (error) {
+        $('reconnect-error').textContent = error.message || 'Unable to connect.';
+      });
+    }, 2000);
+  }
+
+  async function refreshMicrophoneStatus() {
+    var shell = getNativeShell();
+    var status = $('mic-status');
+    var button = $('grant-mic');
+    if (!shell) {
+      status.textContent = 'Unavailable outside the Android app';
+      button.disabled = true;
+      return;
+    }
+    try {
+      var result = await shell.getMicrophoneStatus();
+      status.textContent = result.granted
+        ? 'Granted — browser voice recording is available'
+        : result.state === 'denied'
+          ? 'Denied — enable Microphone in Android app settings'
+          : 'Not granted';
+      button.disabled = !!result.granted || result.state === 'denied';
+    } catch (error) {
+      status.textContent = 'Could not read microphone permission';
+      button.disabled = true;
+      setSettingsStatus(error.message || 'Microphone check failed.', true);
+    }
   }
 
   btnTest.addEventListener('click', function () {
-    setBusy(true); sayErr(''); sayOk('Testing…');
-    probe(input.value).then(function (r) {
+    setBusy(true);
+    sayErr('');
+    sayOk('Testing…');
+    probe(input.value).then(function (result) {
       setBusy(false);
-      if (r.state === 'cors') {
-        sayOk(r.username
-          ? 'Reachable — signed in as ' + r.username + '. Tap Save & connect.'
-          : 'Reachable. Tap Save & connect.');
-      } else {
-        sayOk('Reachable (loads in-app — no extra server setup needed). Tap Save & connect.');
-      }
-    }).catch(function (e) {
+      sayOk(result.username
+        ? 'Reachable — signed in as ' + result.username + '.'
+        : 'Reachable. Tap Save & connect.');
+    }).catch(function (error) {
       setBusy(false);
-      sayErr((e && e.message) || 'Unreachable.');
+      sayErr(error.message || 'Unreachable.');
     });
   });
 
   btnSave.addEventListener('click', function () {
-    setBusy(true); sayErr(''); sayOk('Connecting…');
-    probe(input.value).then(function (r) {
-      persist(r.base);
-      go(r.base);
-    }).catch(function (e) {
+    setBusy(true);
+    sayErr('');
+    sayOk('Connecting…');
+    probe(input.value).then(async function (result) {
+      persistServer(result.base);
+      await connect(result.base);
+    }).catch(function (error) {
       setBusy(false);
-      sayErr((e && e.message) || 'Unreachable.');
+      sayErr(error.message || 'Unable to connect.');
     });
   });
 
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+  input.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      btnSave.click();
+    }
   });
 
-  // Returning user: offer one-tap reconnect (auto-goods after a beat unless
-  // they hit Change). Hash #setup forces the form (e.g. after clearing data
-  // or when the saved host moved).
-  var current = stored();
-  if (current && window.location.hash !== '#setup') {
-    form.classList.add('hidden');
-    reconnect.classList.remove('hidden');
-    $('title').textContent = 'Odysseus';
-    $('blurb').textContent = '';
-    $('reconnect-text').textContent = 'Saved server: ' + current;
-    var timer = setTimeout(function () { go(current); }, 1500);
-    $('change').addEventListener('click', function () {
-      clearTimeout(timer);
-      reconnect.classList.add('hidden');
-      form.classList.remove('hidden');
-      $('title').textContent = 'Connect to your server';
-      input.value = current;
-      try { input.focus(); } catch (_) {}
+  $('change').addEventListener('click', function () {
+    showConnectForm(storedServer());
+  });
+  $('settings-open').addEventListener('click', showSettings);
+  $('go').addEventListener('click', function () {
+    cancelReconnect();
+    $('reconnect-error').textContent = 'Connecting…';
+    connect(storedServer()).catch(function (error) {
+      $('reconnect-error').textContent = error.message || 'Unable to connect.';
     });
-    $('go').addEventListener('click', function () {
-      clearTimeout(timer);
-      go(current);
+  });
+  $('settings-close').addEventListener('click', function () {
+    var server = storedServer();
+    if (server) showReconnect(server);
+    else showConnectForm('');
+  });
+  $('settings-change-server').addEventListener('click', function () {
+    showConnectForm(storedServer());
+  });
+
+  ['keep-signed-in', 'strict-chat', 'keep-awake'].forEach(function (id) {
+    $(id).addEventListener('change', async function () {
+      var settings = loadSettings();
+      settings.keepSignedIn = $('keep-signed-in').checked;
+      settings.strictChat = $('strict-chat').checked;
+      settings.keepAwake = $('keep-awake').checked;
+      saveSettings(settings);
+      if (id === 'keep-awake') {
+        var shell = getNativeShell();
+        if (shell) {
+          try {
+            await shell.setKeepAwake({ enabled: settings.keepAwake });
+          } catch (error) {
+            setSettingsStatus(error.message || 'Could not update screen wake.', true);
+          }
+        }
+      }
     });
-  } else if (current) {
-    input.value = current;
+  });
+
+  $('grant-mic').addEventListener('click', async function () {
+    var shell = getNativeShell();
+    if (!shell) return;
+    $('grant-mic').disabled = true;
+    setSettingsStatus('Requesting microphone permission…', false);
+    try {
+      var result = await shell.requestMicrophone();
+      if (!result.granted) {
+        setSettingsStatus(
+          result.state === 'denied'
+            ? 'Permission denied. Enable Microphone in Android app settings.'
+            : 'Microphone permission was not granted.',
+          true
+        );
+        await refreshMicrophoneStatus();
+        return;
+      }
+      if (result.restartRequired) {
+        setSettingsStatus('Permission granted. Restarting the app to initialize audio…', false);
+        setTimeout(function () {
+          shell.restartApp().catch(function (error) {
+            setSettingsStatus(error.message || 'Automatic restart failed.', true);
+          });
+        }, 600);
+      } else {
+        setSettingsStatus('Microphone permission is already granted.', false);
+        await refreshMicrophoneStatus();
+      }
+    } catch (error) {
+      setSettingsStatus(error.message || 'Microphone permission request failed.', true);
+      await refreshMicrophoneStatus();
+    }
+  });
+
+  async function clearWebData(message) {
+    var shell = getNativeShell();
+    if (!shell) {
+      setSettingsStatus('Web data controls are unavailable in this build.', true);
+      return;
+    }
+    setSettingsStatus('Clearing cookies and WebView cache…', false);
+    try {
+      await shell.clearWebData();
+      setSettingsStatus(message, false);
+    } catch (error) {
+      setSettingsStatus(error.message || 'Could not clear web data.', true);
+    }
   }
+
+  $('logout').addEventListener('click', function () {
+    clearWebData('Signed out. Server and app settings were kept.');
+  });
+  $('clear-web-data').addEventListener('click', function () {
+    clearWebData('Cookies and WebView cache cleared. App settings were kept.');
+  });
+
+  var current = storedServer();
+  if (window.location.hash === '#settings') showSettings();
+  else if (window.location.hash === '#setup') showConnectForm(current);
+  else if (current) showReconnect(current);
+  else showConnectForm('');
 })();
