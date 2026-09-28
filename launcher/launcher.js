@@ -43,6 +43,29 @@
     return nativeShell;
   }
 
+  // One-line bridge diagnosis for the Settings screen and logcat. The exact
+  // reason the native shell is missing decides the fix (absent runtime vs
+  // unregistered plugin vs rejected call), and it is invisible otherwise.
+  function describeBridge() {
+    try {
+      if (!window.Capacitor) return 'no-window.Capacitor';
+      if (typeof window.Capacitor.registerPlugin !== 'function') return 'no-registerPlugin';
+      if (typeof window.Capacitor.getPlatform === 'function') {
+        var platform = window.Capacitor.getPlatform();
+        if (platform && platform !== 'android') return 'platform-' + platform;
+      }
+      return 'bridge-ok';
+    } catch (_) {
+      return 'bridge-probe-threw';
+    }
+  }
+
+  function logDiag(message) {
+    try {
+      if (window.console && window.console.log) window.console.log('[odysseus] ' + message);
+    } catch (_) {}
+  }
+
   function loadSettings() {
     try {
       var parsed = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -207,12 +230,15 @@
     var status = $('mic-status');
     var button = $('grant-mic');
     if (!shell) {
-      status.textContent = 'Unavailable outside the Android app';
+      var reason = describeBridge();
+      status.textContent = 'Unavailable outside the Android app (' + reason + ')';
+      logDiag('native shell missing: ' + reason + ' url=' + window.location.href);
       button.disabled = true;
       return;
     }
     try {
       var result = await shell.getMicrophoneStatus();
+      logDiag('mic status: granted=' + result.granted + ' state=' + result.state);
       status.textContent = result.granted
         ? 'Granted — browser voice recording is available'
         : result.state === 'denied'
@@ -220,9 +246,11 @@
           : 'Not granted';
       button.disabled = !!result.granted || result.state === 'denied';
     } catch (error) {
+      var detail = (error && error.message) || String(error);
+      logDiag('getMicrophoneStatus failed: ' + detail);
       status.textContent = 'Could not read microphone permission';
       button.disabled = true;
-      setSettingsStatus(error.message || 'Microphone check failed.', true);
+      setSettingsStatus(detail || 'Microphone check failed.', true);
     }
   }
 

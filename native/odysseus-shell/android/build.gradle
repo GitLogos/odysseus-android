@@ -20,6 +20,11 @@ android {
         targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 35
         versionCode 1
         versionName "0.1"
+        // Capacitor instantiates plugins (and invokes @PluginMethod /
+        // @PermissionCallback members) via reflection. If the host app ever
+        // enables R8/minification, keep the entry points so release builds
+        // cannot silently lose the bridge. No-op otherwise.
+        consumerProguardFiles "consumer-rules.pro"
     }
 }
 
